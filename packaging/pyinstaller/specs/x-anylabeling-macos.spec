@@ -29,7 +29,17 @@ def _load_version():
         raise RuntimeError(f"Failed to read __version__ from: {app_info_path}")
     return match.group(1)
 
+def _load_app_name():
+    app_info_path = _p('anylabeling', 'app_info.py')
+    with open(app_info_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    match = re.search(r'^__appname__\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+    if not match:
+        raise RuntimeError(f"Failed to read __appname__ from: {app_info_path}")
+    return match.group(1)
+
 __version__ = _load_version()
+__appname__ = _load_app_name()
 
 a = Analysis(
     [_p('anylabeling', 'app.py')],
@@ -66,8 +76,12 @@ exe = EXE(
 )
 app = BUNDLE(
     exe,
-    name=f'X-AnyLabeling-v{__version__}-macOS.app',
+    name=f'{__appname__}.app',
     icon=_p('anylabeling', 'resources', 'images', 'icon.icns'),
     bundle_identifier=None,
-    info_plist={'NSHighResolutionCapable': 'True'},
+    info_plist={
+        'CFBundleDisplayName': __appname__,
+        'CFBundleName': __appname__,
+        'NSHighResolutionCapable': 'True',
+    },
 )
