@@ -179,18 +179,18 @@ exe = EXE(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name=f'X-AnyLabeling-v{__version__}-CPU',
+    name='复迪脉手术视频标注软件',
     debug=False,
     strip=False,
     upx=False,
     runtime_tmpdir=None,
     console=False,
-    icon=_p('anylabeling', 'resources', 'images', 'icon.icns'),
+    icon=_p('anylabeling', 'resources', 'images', 'icon.ico'),
 )
 app = BUNDLE(
     exe,
-    name='X-AnyLabeling.app',
-    icon=_p('anylabeling', 'resources', 'images', 'icon.icns'),
+    name='复迪脉手术视频标注软件',
+    icon=_p('anylabeling', 'resources', 'images','icon.ico'),
     bundle_identifier=None,
     info_plist={'NSHighResolutionCapable': 'True'},
 )
