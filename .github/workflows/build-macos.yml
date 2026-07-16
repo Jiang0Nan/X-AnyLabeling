@@ -1,0 +1,40 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "macOS architecture"
+        required: true
+        default: "arm64"
+        type: choice
+        options:
+          - arm64
+          - intel
+
+jobs:
+  build:
+    runs-on: ${{ inputs.arch == 'intel' && 'macos-15-intel' || 'macos-15' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[cpu,dev]"
+
+      - name: Check environment
+        run: xanylabeling checks
+
+      - name: Build macOS app
+        run: bash scripts/build_executable.sh macos
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: X-AnyLabeling-macOS-${{ inputs.arch }}
