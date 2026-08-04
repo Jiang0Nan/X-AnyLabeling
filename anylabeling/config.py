@@ -150,6 +150,20 @@ def get_default_config():
 
 
 def validate_config_item(key, value):
+    if key == "last_create_mode" and value not in [
+        "polygon",
+        "rectangle",
+        "rotation",
+        "quadrilateral",
+        "point",
+        "line",
+        "circle",
+        "linestrip",
+        "cuboid",
+    ]:
+        raise ValueError(
+            f"Unexpected value for config key 'last_create_mode': {value}"
+        )
     if key == "validate_label" and value not in [None, "exact"]:
         raise ValueError(
             f"Unexpected value for config key 'validate_label': {value}"

@@ -2471,6 +2471,7 @@ class LabelingWidget(LabelDialog):
         self.zoom_widget.valueChanged.connect(self.paint_canvas)
 
         self.populate_mode_actions()
+        self.restore_last_create_mode()
         self._settings_controller = SettingsController(
             config=self._config,
             apply_callback=self._settings_runtime_applier.apply_change,
@@ -2761,6 +2762,17 @@ class LabelingWidget(LabelDialog):
             self.actions.edit_mode,
         )
         utils.add_actions(self.menus.edit, actions + self.actions.editMenu)
+
+    def restore_last_create_mode(self):
+        create_mode = self._config.get("last_create_mode", "polygon")
+        if create_mode not in Shape.get_supported_shape():
+            create_mode = "polygon"
+        self.toggle_draw_mode(
+            edit=False,
+            create_mode=create_mode,
+            disable_auto_labeling=False,
+            save_last_create_mode=False,
+        )
 
     def set_dirty(self):
         # Even if we autosave the file, we keep the ability to undo
@@ -3347,7 +3359,11 @@ class LabelingWidget(LabelDialog):
         self.toggle_draw_mode(edit=False, create_mode=create_mode)
 
     def toggle_draw_mode(
-        self, edit=True, create_mode="rectangle", disable_auto_labeling=True
+        self,
+        edit=True,
+        create_mode="rectangle",
+        disable_auto_labeling=True,
+        save_last_create_mode=True,
     ):
         # Disable auto labeling if needed
         if (
@@ -3364,6 +3380,14 @@ class LabelingWidget(LabelDialog):
         self.canvas.set_editing(edit)
         self.canvas.create_mode = create_mode
         self.canvas._brush_drawing = False
+        if (
+            save_last_create_mode
+            and not edit
+            and create_mode in Shape.get_supported_shape()
+            and self._config.get("last_create_mode") != create_mode
+        ):
+            self._config["last_create_mode"] = create_mode
+            save_config(self._config)
         if edit:
             self.actions.create_mode.setEnabled(True)
             self.actions.create_brush_polygon_mode.setEnabled(True)
