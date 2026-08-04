@@ -562,6 +562,37 @@ class Canvas(
                 self.line.shape_type = "rectangle"
 
             if not self.current:
+                self.h_shape = None
+                self.h_vertex = None
+                self.h_edge = None
+                self.h_cuboid_face = None
+                for shape in reversed(
+                    [s for s in self.shapes if self.is_visible(s)]
+                ):
+                    shape_hit = False
+                    if shape.shape_type in ["point", "line", "linestrip"]:
+                        shape_hit = (
+                            shape.nearest_vertex(
+                                pos, self.epsilon * 3 / self.scale
+                            )
+                            is not None
+                        )
+                    elif len(shape.points) > 1 and shape.contains_point(pos):
+                        shape_hit = True
+                    if shape_hit:
+                        self.h_shape = shape
+                        self.setToolTip(
+                            self.tr("Press Delete to delete shape '%s'")
+                            % shape.label
+                        )
+                        self.setStatusTip(self.toolTip())
+                        break
+                else:
+                    self.setToolTip("")
+                    self.setStatusTip("")
+                if prev_hover_shape != self.h_shape:
+                    self.shape_hover_changed.emit()
+                self.update()
                 self.override_cursor(CURSOR_DRAW)
                 return
 
@@ -2430,8 +2461,11 @@ class Canvas(
             ) and self.is_visible(shape):
                 shape.hovered = shape == self.h_shape
                 shape.fill = (
-                    self._fill_drawing
-                    and (shape.selected or shape == self.h_shape)
+                    (
+                        self._fill_drawing
+                        and (shape.selected or shape == self.h_shape)
+                    )
+                    or (self.drawing() and shape == self.h_shape)
                     and not (self.selected_vertex() and self.moving_shape)
                 )
                 shape.paint(p)

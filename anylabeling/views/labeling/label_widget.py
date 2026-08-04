@@ -182,6 +182,12 @@ class LabelingWidget(LabelDialog):
         # set default shape colors
         Shape.line_color = QtGui.QColor(*self._config["shape"]["line_color"])
         Shape.fill_color = QtGui.QColor(*self._config["shape"]["fill_color"])
+        Shape.hover_line_color = QtGui.QColor(
+            *self._config["shape"]["hover_line_color"]
+        )
+        Shape.hover_fill_color = QtGui.QColor(
+            *self._config["shape"]["hover_fill_color"]
+        )
         Shape.select_line_color = QtGui.QColor(
             *self._config["shape"]["select_line_color"]
         )
@@ -3412,6 +3418,7 @@ class LabelingWidget(LabelDialog):
         else:
             self.hide_attributes_panel()
             self.actions.union_selection.setEnabled(False)
+            self.actions.delete.setEnabled(True)
             create_actions = {
                 "polygon": self.actions.create_mode,
                 "rectangle": self.actions.create_rectangle_mode,
@@ -6164,6 +6171,19 @@ class LabelingWidget(LabelDialog):
                     action.setEnabled(False)
 
     def delete_selected_shape(self):
+        if not self.canvas.editing() and self.canvas.current is None:
+            shape = self.canvas.h_shape
+            if shape is not None:
+                self.canvas.delete_shape(shape)
+                self.canvas.h_shape = None
+                self.canvas.prev_h_shape = None
+                self.remove_labels([shape])
+                self.set_dirty()
+                if self.no_shape():
+                    for action in self.actions.on_shapes_present:
+                        action.setEnabled(False)
+                return
+
         self.remove_labels(self.canvas.delete_selected())
         self.set_dirty()
         if self.no_shape():
