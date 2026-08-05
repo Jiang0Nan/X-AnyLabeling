@@ -57,6 +57,11 @@ class ToolBar(QtWidgets.QFrame):
                 padding: 0px;
                 margin: 0px;
             }}
+            ToolBar QToolButton:checked {{
+                background: rgba(0, 120, 215, 80);
+                border: 1px solid rgba(0, 120, 215, 180);
+                border-radius: 3px;
+            }}
             {separator_qss}
             """)
 

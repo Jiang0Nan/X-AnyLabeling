@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSlider,
     QVBoxLayout,
     QWidget,
     QLineEdit,
@@ -393,6 +394,9 @@ class LabelingWidget(LabelDialog):
             ),
         )
         self.canvas.zoom_request.connect(self.zoom_request)
+        self.canvas.boundary_brush_radius_changed.connect(
+            self._sync_boundary_brush_radius
+        )
 
         # Compare view support
         self.compare_view_manager = CompareViewManager(self.canvas, self)
@@ -830,6 +834,17 @@ class LabelingWidget(LabelDialog):
             shortcuts["edit_polygon"],
             "edit",
             self.tr("Move and edit the selected polygons"),
+            enabled=False,
+        )
+        boundary_brush = action(
+            self.tr("Boundary Brush"),
+            self.toggle_boundary_brush_mode,
+            None,
+            "brush_polygon",
+            self.tr(
+                "Edit the selected polygon boundary with a circular brush"
+            ),
+            checkable=True,
             enabled=False,
         )
         group_selected_shapes = action(
@@ -1722,6 +1737,7 @@ class LabelingWidget(LabelDialog):
             create_line_mode=create_line_mode,
             create_point_mode=create_point_mode,
             create_line_strip_mode=create_line_strip_mode,
+            boundary_brush=boundary_brush,
             digit_shortcut_0=digit_shortcut_0,
             digit_shortcut_1=digit_shortcut_1,
             digit_shortcut_2=digit_shortcut_2,
@@ -1851,6 +1867,7 @@ class LabelingWidget(LabelDialog):
                 create_line_strip_mode,
                 None,
                 edit_mode,
+                boundary_brush,
                 edit,
                 None,
                 copy_coordinates,
@@ -1876,6 +1893,7 @@ class LabelingWidget(LabelDialog):
                 create_line_mode,
                 create_point_mode,
                 create_line_strip_mode,
+                boundary_brush,
                 digit_shortcut_0,
                 digit_shortcut_1,
                 digit_shortcut_2,
@@ -2146,6 +2164,7 @@ class LabelingWidget(LabelDialog):
             self.actions.create_line_strip_mode,
             None,
             edit_mode,
+            self.actions.boundary_brush,
             delete,
             undo,
             loop_thru_labels,
@@ -2239,6 +2258,48 @@ class LabelingWidget(LabelDialog):
         #     lambda: self.inform_next_files(self.filename)
         # )
         self.auto_labeling_widget.hide()  # Hide by default
+        self.boundary_brush_size_panel = QWidget()
+        self.boundary_brush_size_panel.setFixedWidth(390)
+        boundary_brush_size_layout = QHBoxLayout(
+            self.boundary_brush_size_panel
+        )
+        boundary_brush_size_layout.setContentsMargins(8, 0, 8, 0)
+        boundary_brush_size_layout.setSpacing(6)
+        self.boundary_brush_size_label = QLabel(self.tr("Brush: 20 px"))
+        self.boundary_brush_shortcut_label = QLabel(
+            self.tr("= / + add | - subtract | [ ] size")
+        )
+        self.boundary_brush_size_slider = QSlider(
+            Qt.Orientation.Horizontal, self
+        )
+        self.boundary_brush_size_slider.setRange(2, 500)
+        self.boundary_brush_size_slider.setValue(
+            int(self.canvas.boundary_brush_radius)
+        )
+        self.boundary_brush_size_slider.setToolTip(
+            self.tr("Boundary brush size")
+        )
+        self.boundary_brush_size_slider.setEnabled(False)
+        self.boundary_brush_size_slider.valueChanged.connect(
+            self._set_boundary_brush_radius
+        )
+        self.boundary_brush_size_slider.setFixedWidth(125)
+        boundary_brush_size_layout.addWidget(
+            self.boundary_brush_size_label
+        )
+        boundary_brush_size_layout.addWidget(
+            self.boundary_brush_shortcut_label
+        )
+        boundary_brush_size_layout.addWidget(
+            self.boundary_brush_size_slider, 1
+        )
+        self.boundary_brush_size_panel.setToolTip(
+            self.tr(
+                "Boundary brush shortcuts: =/+ add, - subtract, [ ] resize"
+            )
+        )
+        self.boundary_brush_size_panel.setVisible(self.canvas.editing())
+        central_layout.addWidget(self.boundary_brush_size_panel)
         central_layout.addWidget(self.label_instruction)
         central_layout.addSpacing(5)
         central_layout.addWidget(self.auto_labeling_widget)
@@ -3384,6 +3445,10 @@ class LabelingWidget(LabelDialog):
             self.set_text_editing(False)
 
         self.canvas.set_editing(edit)
+        self.canvas.set_boundary_brush_mode(None)
+        self.actions.boundary_brush.setChecked(False)
+        self.boundary_brush_size_panel.setVisible(edit)
+        self.boundary_brush_size_slider.setEnabled(False)
         self.canvas.create_mode = create_mode
         self.canvas._brush_drawing = False
         if (
@@ -3395,6 +3460,7 @@ class LabelingWidget(LabelDialog):
             self._config["last_create_mode"] = create_mode
             save_config(self._config)
         if edit:
+            self.actions.boundary_brush.setEnabled(True)
             self.actions.create_mode.setEnabled(True)
             self.actions.create_brush_polygon_mode.setEnabled(True)
             self.actions.create_rectangle_mode.setEnabled(True)
@@ -3419,6 +3485,7 @@ class LabelingWidget(LabelDialog):
             self.hide_attributes_panel()
             self.actions.union_selection.setEnabled(False)
             self.actions.delete.setEnabled(True)
+            self.actions.boundary_brush.setEnabled(False)
             create_actions = {
                 "polygon": self.actions.create_mode,
                 "rectangle": self.actions.create_rectangle_mode,
@@ -3445,6 +3512,62 @@ class LabelingWidget(LabelDialog):
             create_actions[create_mode].setEnabled(False)
         self.actions.edit_mode.setEnabled(not edit)
         self.label_instruction.setText(self.get_labeling_instruction())
+
+    def set_boundary_brush_mode(self, mode):
+        if not self.canvas.editing():
+            return
+        if mode is None:
+            self.canvas.set_boundary_brush_mode(None)
+            self.actions.boundary_brush.setChecked(False)
+            self.boundary_brush_size_panel.setVisible(self.canvas.editing())
+            self.boundary_brush_size_slider.setEnabled(False)
+            self.status(self.tr("Boundary brush disabled"))
+            return
+        if (
+            len(self.canvas.selected_shapes) != 1
+            or self.canvas.selected_shapes[0].shape_type != "polygon"
+        ):
+            self.status(
+            self.tr("Select one polygon before using the boundary brush")
+            )
+            return
+        self.canvas.set_boundary_brush_mode(mode)
+        self.actions.boundary_brush.setChecked(True)
+        self.boundary_brush_size_panel.setVisible(True)
+        self.boundary_brush_size_slider.setEnabled(True)
+        self.status(
+            self.tr(
+                "Boundary brush: %s, radius %.0f px. =/+ add, - subtract, [ ] resize."
+            )
+            % (
+                self.tr("expand" if mode == "add" else "shrink"),
+                self.canvas.boundary_brush_radius,
+            )
+        )
+
+    def toggle_boundary_brush_mode(self):
+        """Toggle the boundary brush while keeping add/subtract as its mode."""
+        if self.canvas.boundary_brush_mode is None:
+            self.set_boundary_brush_mode("add")
+        else:
+            self.set_boundary_brush_mode(None)
+
+    def _set_boundary_brush_radius(self, value):
+        self.canvas.boundary_brush_radius = float(value)
+        self.boundary_brush_size_label.setText(
+            self.tr("Brush: %d px") % value
+        )
+        self.canvas.update()
+
+    def _sync_boundary_brush_radius(self, value):
+        value = int(round(value))
+        if self.boundary_brush_size_slider.value() != value:
+            self.boundary_brush_size_slider.blockSignals(True)
+            self.boundary_brush_size_slider.setValue(value)
+            self.boundary_brush_size_slider.blockSignals(False)
+        self.boundary_brush_size_label.setText(
+            self.tr("Brush: %d px") % value
+        )
 
     def toggle_brush_polygon_mode(self):
         """Toggle brush drawing mode for polygons."""

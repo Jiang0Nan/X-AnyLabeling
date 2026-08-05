@@ -66,6 +66,7 @@ class Canvas(
     auto_decode_requested = QtCore.pyqtSignal(list)
     auto_decode_finish_requested = QtCore.pyqtSignal()
     shape_hover_changed = QtCore.pyqtSignal()
+    boundary_brush_radius_changed = QtCore.pyqtSignal(float)
     split_position_changed = QtCore.pyqtSignal(float)
     edit_label_requested = QtCore.pyqtSignal()
 
@@ -116,6 +117,10 @@ class Canvas(
         self.setPalette(palette)
         # Initialise local state.
         self.mode = self.EDIT
+        self.boundary_brush_mode = None
+        self.boundary_brush_radius = 20.0
+        self.boundary_brush_pos = None
+        self.boundary_brush_changed = False
         self.is_auto_labeling = False
         self.is_move_editing = False
         self.auto_labeling_mode: AutoLabelingMode = None
@@ -454,6 +459,67 @@ class Canvas(
         """Check if user is editing (mode==EDIT)"""
         return self.mode == self.EDIT
 
+    def set_boundary_brush_mode(self, mode=None):
+        if mode not in (None, "add", "subtract"):
+            raise ValueError(f"Unsupported boundary brush mode: {mode}")
+        self.boundary_brush_mode = mode
+        self.boundary_brush_pos = None
+        self.boundary_brush_changed = False
+        self.update()
+
+    def adjust_boundary_brush_radius(self, delta):
+        self.boundary_brush_radius = max(
+            2.0, min(500.0, self.boundary_brush_radius + delta)
+        )
+        self.boundary_brush_radius_changed.emit(self.boundary_brush_radius)
+        self.update()
+
+    def _apply_boundary_brush(self, pos):
+        if self.boundary_brush_mode is None or len(self.selected_shapes) != 1:
+            return False
+        shape = self.selected_shapes[0]
+        if shape.shape_type != "polygon" or len(shape.points) < 3:
+            return False
+
+        shape_path = QtGui.QPainterPath(shape.points[0])
+        for point in shape.points[1:]:
+            shape_path.lineTo(point)
+        shape_path.closeSubpath()
+
+        brush_path = QtGui.QPainterPath()
+        radius = self.boundary_brush_radius
+        brush_path.addEllipse(
+            QtCore.QPointF(pos.x(), pos.y()), radius, radius
+        )
+        if self.boundary_brush_mode == "add":
+            result_path = shape_path.united(brush_path)
+        else:
+            result_path = shape_path.subtracted(brush_path)
+
+        polygons = result_path.toSubpathPolygons()
+        if not polygons:
+            return False
+        polygon = max(
+            polygons,
+            key=lambda item: abs(
+                sum(
+                    item[i].x() * item[(i + 1) % len(item)].y()
+                    - item[(i + 1) % len(item)].x() * item[i].y()
+                    for i in range(len(item))
+                )
+            ),
+        )
+        points = [QtCore.QPointF(point) for point in polygon]
+        if len(points) < 3:
+            return False
+        if points[0] == points[-1]:
+            points.pop()
+        shape.points = points
+        shape._closed = True
+        self.boundary_brush_changed = True
+        self.update()
+        return True
+
     def set_auto_labeling(self, value=True):
         """Set auto labeling mode"""
         self.is_auto_labeling = value
@@ -540,6 +606,13 @@ class Canvas(
 
         prev_hover_shape = self.h_shape
         self.prev_move_point = pos
+        if self.editing() and self.boundary_brush_mode is not None:
+            self.boundary_brush_pos = pos
+            if ev.buttons() & QtCore.Qt.MouseButton.LeftButton:
+                self._apply_boundary_brush(pos)
+            self.override_cursor(CURSOR_DRAW)
+            self.update()
+            return
         self.repaint()
 
         # Handle auto decode mode
@@ -1106,6 +1179,12 @@ class Canvas(
         pos = self.transform_pos(ev.position())
 
         if ev.button() == QtCore.Qt.MouseButton.LeftButton:
+            if self.editing() and self.boundary_brush_mode is not None:
+                self.boundary_brush_pos = pos
+                self.boundary_brush_changed = False
+                self.store_shapes()
+                self._apply_boundary_brush(pos)
+                return
             if self.drawing():
                 if self.current:
                     # Add point to existing shape.
@@ -1331,6 +1410,13 @@ class Canvas(
                 self.repaint()
         elif ev.button() == QtCore.Qt.MouseButton.LeftButton:
             if self.editing():
+                if self.boundary_brush_mode is not None:
+                    if self.boundary_brush_changed:
+                        self.store_shapes()
+                        self.shape_moved.emit()
+                    self.boundary_brush_changed = False
+                    self.update()
+                    return
                 if (
                     self.h_shape is not None
                     and self.h_shape_is_selected
@@ -2998,6 +3084,20 @@ class Canvas(
                 )
                 p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
 
+        if (
+            self.editing()
+            and self.boundary_brush_mode is not None
+            and self.boundary_brush_pos is not None
+        ):
+            brush_color = QtGui.QColor(0, 120, 255, 180)
+            p.setPen(QtGui.QPen(brush_color, max(1, int(2 / self.scale))))
+            p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            p.drawEllipse(
+                self.boundary_brush_pos,
+                self.boundary_brush_radius,
+                self.boundary_brush_radius,
+            )
+
         p.end()
 
     def render_visualization(
@@ -3486,7 +3586,25 @@ class Canvas(
             elif modifiers == QtCore.Qt.KeyboardModifier.AltModifier:
                 self.snapping = False
         elif self.editing():
-            if key == QtCore.Qt.Key.Key_Up:
+            if self.boundary_brush_mode is not None:
+                if key in (
+                    QtCore.Qt.Key.Key_Plus,
+                    QtCore.Qt.Key.Key_Equal,
+                ):
+                    self.parent.set_boundary_brush_mode("add")
+                elif key == QtCore.Qt.Key.Key_Minus:
+                    self.parent.set_boundary_brush_mode("subtract")
+                elif key in (
+                    QtCore.Qt.Key.Key_BracketLeft,
+                    QtCore.Qt.Key.Key_BracketRight,
+                ):
+                    delta = (
+                        -5.0
+                        if key == QtCore.Qt.Key.Key_BracketLeft
+                        else 5.0
+                    )
+                    self.adjust_boundary_brush_radius(delta)
+            elif key == QtCore.Qt.Key.Key_Up:
                 self.move_by_keyboard(QtCore.QPointF(0.0, -MOVE_SPEED))
             elif key == QtCore.Qt.Key.Key_Down:
                 self.move_by_keyboard(QtCore.QPointF(0.0, MOVE_SPEED))
