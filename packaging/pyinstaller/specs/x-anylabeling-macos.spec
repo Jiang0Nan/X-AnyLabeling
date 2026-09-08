@@ -52,7 +52,9 @@ a = Analysis(
         (_p('anylabeling', 'services', 'auto_labeling', 'configs', 'bert', '*'), 'anylabeling/services/auto_labeling/configs/bert'),
         (_p('anylabeling', 'services', 'auto_labeling', 'configs', 'clip', '*'), 'anylabeling/services/auto_labeling/configs/clip'),
         (_p('anylabeling', 'services', 'auto_labeling', 'configs', 'ppocr', '*'), 'anylabeling/services/auto_labeling/configs/ppocr'),
-        (_p('anylabeling', 'services', 'auto_labeling', 'configs', 'ram', '*'), 'anylabeling/services/auto_labeling/configs/ram')
+        (_p('anylabeling', 'services', 'auto_labeling', 'configs', 'ram', '*'), 'anylabeling/services/auto_labeling/configs/ram'),
+        (_p('anylabeling', 'resources', 'images', 'icon.png'), 'anylabeling/resources/images'),
+        (_p('anylabeling', 'resources', 'images', 'logo.png'), 'anylabeling/resources/images')
     ],
     hiddenimports=[],
     hookspath=[],
@@ -66,7 +68,7 @@ exe = EXE(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name=f'X-AnyLabeling-{__version__}-macOS',
+    name=__appname__,
     debug=False,
     strip=False,
     upx=False,

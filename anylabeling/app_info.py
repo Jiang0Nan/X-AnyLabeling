@@ -1,7 +1,7 @@
 __appname__ = "复迪脉手术视频标注软件"
-__appdescription__ = "Advanced Auto Labeling Solution with Added Features"
-__version__ = "4.0.0-beta.7"
-__url__ = "https://github.com/CVHub520/X-AnyLabeling"
+__appdescription__ = "A lightweight, efficient, and unified cross-platform desktop application for AI-assisted annotation of text, image, video, and multimodal data."
+__version__ = "2.0.1"
+__url__ = "https://xanylabeling.com"
 
 CLI_HELP_MSG = """
     Usage: xanylabeling [COMMAND] [OPTIONS]
@@ -48,11 +48,10 @@ CLI_HELP_MSG = """
         7. Convert YOLO to XLABEL:
             xanylabeling convert --task yolo2xlabel --mode detect --images ./images --labels ./labels --output ./output --classes classes.txt
 
-    For
-     more options, use: xanylabeling --help
+    For more options, use: xanylabeling --help
 
-    Docs: https://github.com/CVHub520/X-AnyLabeling/tree/main/docs
-    Examples: https://github.com/CVHub520/X-AnyLabeling/tree/main/examples/
+    Docs: https://xanylabeling.com/docs/x-anylabeling/get_started
+    Tasks: https://xanylabeling.com/examples
     GitHub: https://github.com/CVHub520/X-AnyLabeling
 """
 
