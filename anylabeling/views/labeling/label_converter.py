@@ -26,6 +26,14 @@ from anylabeling.views.labeling.utils.shape import rectangle_from_diagonal
 from anylabeling.views.labeling.utils.general import is_possible_rectangle
 
 
+class PoseGroupError(ValueError):
+    pass
+
+
+class PoseClassError(ValueError):
+    pass
+
+
 class LabelConverter:
     def __init__(self, classes_file=None, pose_cfg_file=None):
         self.classes = []
@@ -1339,14 +1347,21 @@ class LabelConverter:
                         logger.error(
                             f"group_id is None for {shape} in {input_file}."
                         )
-                        raise ValueError(
+                        raise PoseGroupError(
                             f"group_id is None for {shape} in {input_file}."
                         )
                     label = shape["label"]
                     points = self.clamp_points(
                         shape["points"], image_width, image_height
                     )
-                    group_id = int(shape["group_id"])
+                    try:
+                        group_id = int(shape["group_id"])
+                    except (TypeError, ValueError) as e:
+                        raise PoseGroupError(
+                            f"Invalid group_id {shape['group_id']!r} for pose "
+                            f"annotation in {input_file}. Group IDs must be "
+                            f"integers."
+                        ) from e
                     if group_id not in pose_data:
                         pose_data[group_id] = {
                             "rectangle": [],
@@ -1374,7 +1389,7 @@ class LabelConverter:
                 )
                 for group_id, data in pose_data.items():
                     if "box_label" not in data or not data.get("rectangle"):
-                        raise ValueError(
+                        raise PoseGroupError(
                             f"Missing rectangle/box_label for pose "
                             f"group_id={group_id} in {input_file}. "
                             f"Each pose instance needs a rectangle with "
@@ -1382,7 +1397,7 @@ class LabelConverter:
                         )
                     box_label = data["box_label"]
                     if box_label not in classes:
-                        raise ValueError(
+                        raise PoseClassError(
                             f"Unknown box_label '{box_label}' for pose "
                             f"group_id={group_id} in {input_file}. "
                             f"Expected one of: {classes}"
@@ -1853,7 +1868,7 @@ class LabelConverter:
         image_shape = (image_height, image_width)
 
         polygons = []
-        for shape in data["shapes"]:
+        for layer_index, shape in enumerate(data["shapes"]):
             shape_type = shape["shape_type"]
             if shape_type != "polygon":
                 continue
@@ -1868,6 +1883,7 @@ class LabelConverter:
                 {
                     "label": shape["label"],
                     "polygon": polygon,
+                    "layer_index": layer_index,
                 }
             )
 
@@ -1875,26 +1891,37 @@ class LabelConverter:
         if output_format not in ["grayscale", "rgb"]:
             raise ValueError("Invalid output format specified")
         mapping_color = mapping_table["colors"]
+        label_priority = mapping_table.get("label_priority", {})
+        if not isinstance(label_priority, dict):
+            raise ValueError("label_priority must be an object")
+        unknown_labels = set(label_priority) - set(mapping_color)
+        if unknown_labels:
+            labels = ", ".join(sorted(unknown_labels))
+            raise ValueError(f"Unknown labels in label_priority: {labels}")
+        if any(
+            isinstance(priority, bool) or not isinstance(priority, int)
+            for priority in label_priority.values()
+        ):
+            raise ValueError("label_priority values must be integers")
+        polygons.sort(
+            key=lambda item: (
+                label_priority.get(item["label"], 0),
+                item["layer_index"],
+            )
+        )
+
         if output_format == "grayscale":
             # Initialize binary_mask
             binary_mask = np.zeros(image_shape, dtype=np.uint8)
-            # Sort polygons by area to handle overlapping (larger areas first)
-            polygons.sort(
-                key=lambda x: cv2.contourArea(np.array(x["polygon"])),
-                reverse=True,
-            )
 
             for item in polygons:
                 label, polygon = item["label"], item["polygon"]
                 if label in mapping_color:
-                    mask = np.zeros(image_shape, dtype=np.uint8)
                     cv2.fillPoly(
-                        mask,
+                        binary_mask,
                         [np.array(polygon, dtype=np.int32)],
                         mapping_color[label],
                     )
-                    # Only update unassigned pixels (where binary_mask is still 0)
-                    binary_mask = np.where(binary_mask == 0, mask, binary_mask)
 
             cv2.imencode(".png", binary_mask)[1].tofile(output_file)
 
@@ -1903,23 +1930,16 @@ class LabelConverter:
             color_mask = np.zeros(
                 (image_height, image_width, 3), dtype=np.uint8
             )
-            polygons.sort(
-                key=lambda x: cv2.contourArea(np.array(x["polygon"])),
-                reverse=True,
-            )
 
             for item in polygons:
                 label, polygon = item["label"], item["polygon"]
                 if label in mapping_color:
                     color = mapping_color[label]
-                    # Create mask for current polygon
-                    curr_mask = np.zeros(image_shape[:2], dtype=np.uint8)
                     cv2.fillPoly(
-                        curr_mask, [np.array(polygon, dtype=np.int32)], 1
+                        color_mask,
+                        [np.array(polygon, dtype=np.int32)],
+                        color,
                     )
-                    # Only update pixels that haven't been assigned yet
-                    unassigned = np.all(color_mask == 0, axis=2)
-                    color_mask[curr_mask.astype(bool) & unassigned] = color
 
             cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_BGR2RGB))[
                 1
